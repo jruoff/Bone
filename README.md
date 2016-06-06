@@ -1,2 +1,2 @@
 # Bone
-Scala functionalness metric
+Scala functionalness metric.

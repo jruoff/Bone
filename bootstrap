@@ -1,0 +1,4 @@
+#!/bin/sh
+sbt clean assembly # Assembly plugin
+cp target/scala-2.11/metric-assembly-1.0.jar . # Copy new plugin in place
+cat sbt_commands | sbt # Compile plugin using plugin
