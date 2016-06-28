@@ -5,7 +5,7 @@ import Functionalness.SourceAnalysis
   */
 object Aggregator {
   import java.io.File
-  import play.api.libs.json.{Json, JsResult}
+  import play.api.libs.json._
   import scalaz.effect.IO
   import IO.putStrLn
 
@@ -29,13 +29,20 @@ object Aggregator {
         .filter(_.getName.endsWith(".json"))
         .map(readAnalysis).sequence
       analyses = results filter (_.isSuccess) map (_.get)
-      analysis = flatten(analyses map flatten reduceLeft merge) // TODO: Use a fold instead
+      analysis = flatten((analyses map flatten).suml)
       _ <- putStrLn("Write aggregated results...")
       _ <- ExtraIO.write_all_utf8("bone_aggregated.json", Json.prettyPrint(Json.toJson(analysis)))
       _ <- putStrLn("Write normalized summary...")
-      _ <- ExtraIO.write_all_utf8("bone_summary.json", Json.prettyPrint(Json.toJson(summary(analysis))))
+      json_summary = Json.toJson(summary(analysis))
+      _ <- ExtraIO.write_all_utf8("bone_summary.json", Json.prettyPrint(json_summary))
+      _ <- ExtraIO.write_all_utf8("bone_summary.csv", jsonToCsv(json_summary) + "\n")
       _ <- putStrLn("Analysis completed.")
     } yield ()
+  }
+
+  def jsonToCsv(json: JsValue): String = json match {
+    case obj: JsObject => obj.fields.map(pair => jsonToCsv(pair._2)).mkString(", ")
+    case JsNumber(n) => n.toString
   }
 
   /** Read a SourceAnalysis object from a file.
