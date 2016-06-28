@@ -1,4 +1,4 @@
-/** Simple interfaces for various IO related tasks. */
+/** Simple functional interfaces for various IO related tasks. */
 object ExtraIO {
   import java.nio.file.{Files, Paths}
   import annotation.tailrec
@@ -11,7 +11,7 @@ object ExtraIO {
     * @param data The bytes to write to the file.
     */
   def write_all(file_name: String, data: Vector[Byte]): IO[Unit] =
-    IO(Files.write(Paths.get(file_name), data.toArray))
+    IO(Files.write(Paths get file_name, data.toArray))
 
   /** Read bytes from a file.
     *
@@ -19,7 +19,7 @@ object ExtraIO {
     * @return A Vector containing the bytes in the file.
     */
   def read_all(file_name: String): IO[Vector[Byte]] =
-    IO(Files.readAllBytes(Paths.get(file_name)).toVector)
+    IO(Files.readAllBytes(Paths get file_name).toVector)
 
   /** Write text to a file, using UTF-8 encoding.
     *
@@ -43,7 +43,7 @@ object ExtraIO {
     * @return Monadic process that ensures all directories in the path exist.
     */
   def make_directories(path_inc_file_name: String): IO[Unit] =
-    IO(new java.io.File(path_inc_file_name).getParentFile.mkdirs())
+    IO(Files.createDirectories(Paths.get(path_inc_file_name).getParent))
 
   /** Make a function to execute a shell command.
     *
@@ -70,7 +70,7 @@ object ExtraIO {
         output.close()
       }
 
-      val io = new ProcessIO(writer, reader, err => err.close())
+      val io = new ProcessIO(writer, reader, _.close())
       Process(command).run(io).exitValue()
       v.result() // TODO: Is this safe, or is this a race condition?
     }

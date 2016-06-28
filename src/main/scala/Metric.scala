@@ -9,7 +9,6 @@ import scala.reflect.api.Universe
   */
 final class Metric[U <: Universe](val universe: U) {
   import ExtraString._
-  import play.api.libs.json._
   import universe._
 
   val type_util = new TypeUtil[universe.type](universe)
@@ -88,17 +87,28 @@ final class Metric[U <: Universe](val universe: U) {
   }
 
 
-
+  /** Get the declaration type of a symbol. */
   def declaration_type(symbol: Symbol): Type = {
     assert(!is_anonymous(symbol))
     symbol.typeSignature
   }
 
+  /** Get the declaration type of an application.
+    *
+    * @note The declaration type is the type as defined by the declaration
+    *       of the method that is being applied.
+    */
   def declaration_type(application: Tree): Type = {
     assert(!is_anonymous(application))
     declaration_type(application.symbol)
   }
 
+  /** Get the application type of an application.
+    *
+    * @note The application type is the type as defined by the the application
+    *       of the method at the site of application. Any formal type parameters
+    *       have been substituted for the local type arguments.
+    */
   def application_type(application: Tree): Type = {
     assert(application.tpe != null)
     assert(application.tpe != NoType)
@@ -143,133 +153,90 @@ final class Metric[U <: Universe](val universe: U) {
     ExtraGraph.local_call_graph(f.name, to_names(f.applications filterNot is_anonymous).toSet[String])
 
 
+  import Functionalness._
 
-  def sum_json(left: JsValue, right: JsValue): JsValue = {
-    // JsNumber(0) is left and right identity for all other JsValues.
-    if (left  == JsNumber(0)) return right
-    if (right == JsNumber(0)) return left
-
-    (left, right) match {
-      case (l: JsString, r: JsString) => JsArray (Seq(l, r))   // String + String
-      case (l: JsString, JsArray (r)) => JsArray (Seq(l) ++ r) // String + Array
-      case (JsArray (l), r: JsString) => JsArray (l ++ Seq(r)) // Array  + String
-      case (JsArray (l), JsArray (r)) => JsArray (l ++ r)      // Array  + Array
-      case (JsNumber(l), JsNumber(r)) => JsNumber(l +  r)      // Add numbers
-      case (JsObject(l), JsObject(r)) =>
-        import scalaz.syntax.std.map._
-        JsObject(l.toMap.unionWith(r.toMap)(sum_json)) // Union sum JSON objects
-
-      // Other combinations are not defined.
-      case pair => throw new RuntimeException("sum_json not defined for " + pair.toString)
-    }
-  }
-
-  /** Serialize the [[FunctionInformation]] object as a JSON object.
+  /** Serialize a stream of named applications.
     *
-    * @param f the function information.
-    * @return A JSON object containing the serialization.
+    * @param values The stream of named applications.
+    * @return A JSON object containing a list of names, and a distinct list of names.
     */
-  def to_json(f: FunctionInformation): JsObject = {
+  def make_histogram(values: List[String]): Histogram =
+    Histogram(values.size, values groupBy identity mapValues (_.size))
 
-    /** Serialize a stream of named applications.
-      *
-      * @param named_applications The stream of named applications.
-      * @return A JSON object containing a list of names, and a distinct list of names.
-      */
-    def total_distinct(named_applications: List[Tree]): JsValue =
-      if (named_applications.isEmpty)
-        JsNumber(0)
-      else {
-        val names = to_names(named_applications)
-        Json.obj(
-          "total"     -> names.size,
-          "histogram" -> JsObject(names.groupBy(identity).mapValues(x => JsNumber(x.size)))
-        )
-      }
-
-    /** Split and serialize a stream of named applications.
-      *
-      * There are two kinds of named applications, those that are declared implicit and those that are not.
-      *
-      * @param named_applications The stream of named applications.
-      * @return A JSON object containing separate objects for explicit and implicit applications.
-      */
-    def split_named(named_applications: List[Tree]): JsValue =
-      if (named_applications.isEmpty)
-        JsNumber(0)
-      else {
-        val (implicit_, explicit) = named_applications partition is_implicit
-        Json.obj(
-          "explicit" -> total_distinct(explicit ),
-          "implicit" -> total_distinct(implicit_)
-        )
-      }
-
-    /** Split and serialize a stream of applications.
-      *
-      * There are two kinds of applications, those that are named, and those that are anonymous.
-      *
-      * @param applications The stream of applications.
-      * @return A JSON object containing separate objects for named and anonymous applications.
-      */
-    def split_applications(applications: List[Tree]): JsValue =
-      if (applications.isEmpty)
-        JsNumber(0)
-      else {
-        val (anonymous, named) = applications partition is_anonymous
-        Json.obj(
-          "named"     -> split_named(named),
-          "anonymous" -> anonymous.size
-        )
-      }
-
-    def applications_type_predicate(applications: List[Tree])(predicate: Type => Boolean): JsValue = {
-      val application = applications filter { tree =>                        predicate(application_type(tree)) }
-      val declaration = applications filter { tree => !is_anonymous(tree) && predicate(declaration_type(tree)) }
-
-      if (application.isEmpty && declaration.isEmpty)
-        JsNumber(0)
-      else
-        Json.obj(
-          "application" -> split_applications(application),
-          "declaration" -> split_named(declaration)
-        )
-    }
-
-    def type_analysis(serializer: (Type => Boolean) => JsValue,
-                      serializer_kleene: (Type => Kleene) => JsValue
-                     ): JsObject = Json.obj(
-      "higher_order"      -> serializer(type_util.is_higher_order),
-      "mutable_result"    -> serializer_kleene(type_util.has_mutable_result),
-      "mutable_parameter" -> serializer_kleene(t => type_util.takes_mutable_parameter(t, Nil)),
-      "monadic_result"    -> serializer(type_util.has_monadic_result),
-      "unit_result"       -> serializer(type_util.has_unit_result)
-    )
-
-    Json.obj(
-      "name"           -> f.name,
-      "interface"      -> Json.obj(
-        "type"           -> f.`type`.toString,
-        "explicit_type"  -> type_util.strip_implicit_parameter_lists(f.`type`).toString,
-        "result_type"    -> type_util.method_result_type            (f.`type`).toString,
-        "type_analysis"  -> type_analysis(
-          property => JsArray(if (property(f.`type`)               ) Seq(JsString(f.name)) else Seq()),
-          property => JsArray(if (property(f.`type`) == Kleene.True) Seq(JsString(f.name)) else Seq())
-        )
-      ),
-      "implementation" -> Json.obj(
-        "size"           -> get_size(f.implementation),
-        "self_recursive" -> is_self_recursive(f),
-        "while_loops"    -> while_loops(f.implementation).size,
-        "throws"         -> f.throws.map(_.toString),
-        "vars"           -> var_definitions(f.implementation),
-        "lambdas"        -> anonymous_functions(f.implementation).size,
-        "applications"   -> split_applications(f.applications),
-        "type_analysis"  -> type_analysis(
-          applications_type_predicate(f.applications),
-          kl => applications_type_predicate(f.applications)(t => kl(t).boolean(false))
-        )
-      )
-    )
+  /** Split and serialize a stream of named applications.
+    *
+    * There are two kinds of named applications, those that are declared implicit and those that are not.
+    *
+    * @param named_applications The stream of named applications.
+    * @return A JSON object containing separate objects for explicit and implicit applications.
+    */
+  def split_named(named_applications: List[Tree]): SplitNamed = {
+    val (implicit_, explicit) = named_applications partition is_implicit
+    SplitNamed(make_histogram(to_names(explicit)), make_histogram(to_names(implicit_)))
   }
+
+  /** Split and serialize a stream of applications.
+    *
+    * There are two kinds of applications, those that are named, and those that are anonymous.
+    *
+    * @param applications The stream of applications.
+    * @return A JSON object containing separate objects for named and anonymous applications.
+    */
+  def split_applications(applications: List[Tree]): SplitApplications = {
+    val (anonymous, named) = applications partition is_anonymous
+    SplitApplications(split_named(named), anonymous.size)
+  }
+
+  def declaration_serializer(f: FunctionInformation, property: Type => Boolean): Set[String] =
+    if (property(f.`type`)) Set(f.name) else Set()
+
+  def declaration_type_analysis(f: FunctionInformation): DeclarationTypeAnalysis =
+    DeclarationTypeAnalysis(
+      declaration_serializer(f,      type_util.is_higher_order),
+      declaration_serializer(f, t => type_util   has_mutable_result    t boolean false),
+      declaration_serializer(f, t => type_util takes_mutable_parameter t boolean false),
+      declaration_serializer(f,      type_util.has_monadic_result),
+      declaration_serializer(f,      type_util.has_unit_result)
+    )
+
+  def application_serializer(applications: List[Tree], predicate: Type => Boolean): FilteredApplications = {
+    val application = applications filter { tree =>                        predicate(application_type(tree)) }
+    val declaration = applications filter { tree => !is_anonymous(tree) && predicate(declaration_type(tree)) }
+    FilteredApplications(split_applications(application), split_named(declaration))
+  }
+
+  def application_type_analysis(applications: List[Tree]): ApplicationTypeAnalysis =
+    ApplicationTypeAnalysis(
+      application_serializer(applications,      type_util.is_higher_order),
+      application_serializer(applications, t => type_util   has_mutable_result    t boolean false),
+      application_serializer(applications, t => type_util takes_mutable_parameter t boolean false),
+      application_serializer(applications,      type_util.has_monadic_result),
+      application_serializer(applications,      type_util.has_unit_result)
+    )
+
+  def interface_analysis(f: FunctionInformation): Interface =
+    Interface(
+      f.`type`.toString,
+      type_util.strip_implicit_parameter_lists(f.`type`).toString,
+      type_util.method_result_type            (f.`type`).toString,
+      declaration_type_analysis(f)
+    )
+
+  def implementation_analysis(f: FunctionInformation): Implementation =
+    Implementation(
+      get_size(f.implementation),
+      if (is_self_recursive(f)) 1 else 0,
+      while_loops(f.implementation).size,
+      f.throws.map(_.toString),
+      var_definitions(f.implementation),
+      anonymous_functions(f.implementation).size,
+      split_applications(f.applications),
+      application_type_analysis(f.applications)
+    )
+
+  def function_analysis(f: FunctionInformation): FunctionAnalysis =
+    FunctionAnalysis(Set(f.name), interface_analysis(f), implementation_analysis(f))
+
+  def source_analysis(source: String, functions: Functions): SourceAnalysis =
+    Functionalness.SourceAnalysis(Set(source), functions map function_analysis)
 }

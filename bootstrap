@@ -1,4 +1,6 @@
 #!/bin/sh
 sbt clean assembly # Assembly plugin
 cp target/scala-2.11/metric-assembly-1.0.jar . # Copy new plugin in place
+rm -r bone 2> /dev/null # Silently remove the old analysis
 cat sbt_commands | sbt # Compile plugin using plugin
+java -jar metric-assembly-1.0.jar # Merge the results

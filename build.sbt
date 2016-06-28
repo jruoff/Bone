@@ -14,4 +14,4 @@ libraryDependencies += "com.typesafe.play" %% "play-json" % "2.5.2"
 
 scalacOptions ++= Seq("-Xmax-classfile-name","72")
 
-mainClass := Some("ReflectionRunner")
+mainClass := Some("Aggregator")

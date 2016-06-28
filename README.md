@@ -1,6 +1,6 @@
 # Bone
 
-To build the compiler plugin, run the command:
+This program depends on Java 8. To build the compiler plugin, run the command:
 ```bash
   sbt assembly
 ```

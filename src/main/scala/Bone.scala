@@ -54,17 +54,15 @@ class Bone(val global: Global) extends Plugin {
           zipped <- command_to_function("gzip -f")(image)
         } yield zipped*/
 
-        val metric = new Metric[global.type](global) // Because we all love path-dependent types. Not.
-        val funcs  = metric.collect_function_information(unit.body)
-        val json   = Json.obj(
-          "source"   -> relative_source_path,
-          "analysis" -> JsArray(funcs map metric.to_json)
-        )
+        val metric    = new Metric[global.type](global) // Because we all love path-dependent types. Not.
+        val functions = metric.collect_function_information(unit.body)
+        val analysis  = metric.source_analysis(relative_source_path, functions)
+        val text      = Json.prettyPrint(Json.toJson(analysis))
         (for {
-          //image <- dotToImage(ExtraGraph.to_dot((funcs map metric.local_call_graph).suml))
+          //image <- dotToImage(ExtraGraph.to_dot((functions map metric.local_call_graph).suml))
           _     <- make_directories(relative_metric_path)
           //_     <- write_all(relative_metric_path + ".png", image)
-          _     <- write_all_utf8(relative_metric_path + ".json", Json.prettyPrint(json))
+          _     <- write_all_utf8(relative_metric_path + ".json", text)
         } yield ()).unsafePerformIO()
       }
     }

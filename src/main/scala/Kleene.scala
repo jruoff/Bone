@@ -29,7 +29,7 @@ final case class Kleene private(private val value: Int) {
 
   /** Convert into a boolean */
   def boolean(default: Boolean): Boolean =
-    boolean.getOrElse(default)
+    boolean getOrElse default
 
   /** Convert to string */
   override def toString: String = this match {
@@ -54,8 +54,8 @@ object Kleene {
   /** Implicit object to write a Kleene instance to JSON.
     * True is true, False is false, and Unknown is null.
     */
-  implicit object IntWrites extends Writes[Kleene] {
+  implicit object KleeneWrites extends Writes[Kleene] {
     def writes(o: Kleene): JsValue =
-      o.boolean.map(JsBoolean).getOrElse(JsNull)
+      o.boolean map JsBoolean getOrElse JsNull
   }
 }
